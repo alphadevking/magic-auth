@@ -21,7 +21,7 @@ export class MagicLoginAuthStrategy extends PassportStrategy(
       // "href" is your confirmUrl with the confirmation token,
       // for example "/auth/magiclogin/confirm?token=<longtoken>"
       sendMagicLink: async (destination, href) => {
-        await this.authService.sendMagicLink(destination, `http://localhost:3001${href}`);
+        await this.authService.sendMagicLink(destination, `http://localhost:3252${href}`);
       },
 
       // Once the user clicks on the magic link and verifies their login attempt,

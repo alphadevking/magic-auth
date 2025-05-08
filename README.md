@@ -7,19 +7,28 @@ A NestJS starter project demonstrating magic link authentication using `passport
 
 ## Description
 
-This project provides a backend implementation for a magic link authentication system. Users can request a login link to be sent to their email, and clicking this link will authenticate them into the application. It's built with the [NestJS](https://nestjs.com/) framework and leverages `passport-magic-login` for the core authentication strategy.
+This project demonstrates two passwordless authentication methods using NestJS:
+
+1.  **Magic Link:** Users request a link via email. Clicking this link (containing a short-lived token) authenticates them. Implemented using `passport-magic-login`.
+2.  **OTP Verification:** Users request an OTP via email. They then submit this OTP to verify their identity. Implemented using `otplib` and Redis caching.
+
+Both successful flows result in the issuance of a standard JWT for session management.
 
 ## Key Features
 
-*   Passwordless, magic link authentication.
-*   Built with NestJS, a progressive Node.js framework.
-*   Uses `passport` and `passport-magic-login`.
-*   Configurable JWT token expiration for magic links.
+*   **Magic Link Authentication:** Secure, one-click login via email links.
+*   **OTP Authentication:** Time-based One-Time Password generation and verification.
+*   **JWT Sessions:** Standard JWT issuance upon successful authentication.
+*   **Redis Caching:** Uses Redis via `@nestjs/cache-manager` and `@keyv/redis` for storing OTPs temporarily.
+*   **Docker Support:** Includes `Dockerfile` and `.dockerignore` for containerization.
+*   Built with [NestJS](https://nestjs.com/), a progressive Node.js framework.
 
 ## Prerequisites
 
-*   [Node.js](https://nodejs.org/) (LTS version recommended)
+*   [Node.js](https://nodejs.org/) (LTS version recommended - see `Dockerfile` for specific version)
 *   [pnpm](https://pnpm.io/)
+*   A running Redis instance (local or cloud-based).
+*   [Docker](https://www.docker.com/) (Optional, for running with Docker)
 
 ## Getting Started
 
@@ -38,39 +47,35 @@ pnpm install
 
 ### 3. Set Up Environment Variables
 
-Create a `.env` file in the root of the project by copying the example:
-
-```bash
-cp .env.example .env
-```
-
-Then, update the `.env` file with your specific configurations:
-
-**`.env.example`:**
+Create a `.env` file in the root of the project. You can copy `.env.example` if it exists, or create it manually with the following variables:
 
 ```env
-# Application Configuration
-APP_BASE_URL=http://localhost:3001 # Base URL where the frontend/callback is hosted
+# Application Port
+PORT=3252
 
 # Magic Link Strategy Configuration
-MAGIC_LINK_SECRET=your-very-strong-and-unique-secret-key # Used to encrypt the authentication token
+# Used by passport-magic-login to sign the link token
+MAGIC_LINK_SECRET=your-very-strong-and-unique-secret-for-magic-link
 
-# Email Configuration (adjust based on your AuthService implementation)
-# These are placeholders; your AuthService will determine the exact variables needed.
-EMAIL_HOST=smtp.example.com
-EMAIL_PORT=587
-EMAIL_USER=user@example.com
-EMAIL_PASS=your_email_password
-EMAIL_FROM="Your App Name" <noreply@example.com> # Sender email address
+# Redis Configuration (for OTP caching)
+# Example for local Redis: REDIS_URL=redis://localhost:6379
+# Example for Redis Cloud (replace with your actual credentials):
+REDIS_URL=redis://default:your_password@your_redis_host.com:port
 
-# JWT Options (optional, defaults in strategy)
-# JWT_EXPIRES_IN=15m # Example: 15 minutes
+# OTP Configuration
+OTP_SECRET=your-very-strong-and-unique-secret-for-otp # Used by otplib to generate/verify OTPs
+OTP_EXPIRY_SECONDS=300 # How long the OTP is valid (in seconds)
+OTP_LENGTH=6 # Number of digits for the OTP
+
+# JWT Configuration (for session tokens)
+JWT_SECRET=your-very-strong-and-unique-secret-for-jwt # Used to sign session JWTs
+JWT_EXPIRY=3600s # How long the session JWT is valid (e.g., 3600s = 1 hour)
 ```
 
 **Important:**
-*   `MAGIC_LINK_SECRET` must be a long, unique, and secret string.
-*   `APP_BASE_URL` should be the URL where your application is accessible and where the magic link callback will be handled (e.g., `http://localhost:3001` as seen in `magin-login.strategy.ts`).
-*   Configure the `EMAIL_*` variables according to the email service provider you are using within your `AuthService` to send the magic links.
+*   Replace placeholder values (like `your-very-strong...`, `your_password`, `your_redis_host.com:port`) with your actual secret keys and connection details.
+*   Keep your `.env` file secure and **do not commit it to version control** if it contains sensitive information.
+*   The `REDIS_URL` is crucial for the OTP functionality to work correctly.
 
 ### 4. Running the Application
 
@@ -85,7 +90,30 @@ pnpm run start:prod
 pnpm run start:debug
 ```
 
-The application will typically start on `http://localhost:3000` (default NestJS port, unless configured otherwise).
+The application will start on the port specified by the `PORT` environment variable (e.g., `http://localhost:3252` if `PORT=3252`).
+
+## Running with Docker (Optional)
+
+1.  **Ensure Docker is running.**
+2.  **Build the Docker image:**
+    ```bash
+    docker build -t magic-auth-app .
+    ```
+3.  **Run the container:**
+    Make sure your `.env` file is configured correctly in the project root directory.
+    ```bash
+    # Run in detached (background) mode
+    docker run --env-file .env -p [YOUR_HOST_PORT]:[CONTAINER_PORT] --name magic-auth-container -d magic-auth-app
+
+    # Example using the PORT from .env (3252):
+    docker run --env-file .env -p 3252:3252 --name magic-auth-container -d magic-auth-app
+    ```
+    *   Replace `[YOUR_HOST_PORT]` with the port you want to access the app on your machine.
+    *   Replace `[CONTAINER_PORT]` with the `PORT` value set in your `.env` file (e.g., 3252).
+    *   The `--env-file .env` flag injects your environment variables into the container.
+    *   `-d` runs the container in the background. Omit it to see logs directly.
+
+    You can then access the application at `http://localhost:[YOUR_HOST_PORT]`.
 
 ## API Endpoints
 
@@ -105,7 +133,49 @@ The primary authentication endpoints are:
 *   **`GET /auth/magiclogin/callback`**
     *   The callback URL that the user is redirected to after clicking the magic link from their email.
     *   The `passport-magic-login` strategy handles token verification.
-    *   **Response:** On success, typically returns user information and/or a session token/cookie.
+    *   **Response (Success):** Issues a standard JWT access token.
+        ```json
+        {
+          "success": true,
+          "message": "Logged in successfully",
+          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        }
+        ```
+        *(Note: The actual response structure might vary based on how you handle the final JWT issuance after the guard passes).*
+
+*   **`POST /auth/otp/send`**
+    *   Initiates the OTP login process by generating and sending an OTP.
+    *   **Request Body:** Expects an email address.
+        ```json
+        {
+          "destination": "user@example.com"
+        }
+        ```
+    *   **Response:** Confirms OTP sending.
+        ```json
+        {
+          "message": "OTP sent to user@example.com. It will expire in 5 minutes."
+        }
+        ```
+
+*   **`POST /auth/otp/verify`**
+    *   Verifies the submitted OTP for a given email.
+    *   **Request Body:** Expects the email and the OTP.
+        ```json
+        {
+          "destination": "user@example.com",
+          "otp": "123456"
+        }
+        ```
+    *   **Response (Success):** Issues a standard JWT access token.
+        ```json
+        {
+          "success": true,
+          "message": "OTP verified successfully. Logged in.",
+          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        }
+        ```
+    *   **Response (Failure):** Indicates an invalid or expired OTP.
 
 ## Running Tests
 
@@ -125,7 +195,7 @@ pnpm run test:e2e
 
 ## Deployment
 
-When deploying your NestJS application, refer to the official [NestJS deployment documentation](https://docs.nestjs.com/deployment) for best practices. Ensure your production environment variables (especially `MAGIC_LINK_SECRET` and email service credentials) are securely configured.
+When deploying your NestJS application, refer to the official [NestJS deployment documentation](https://docs.nestjs.com/deployment) for best practices. Using the provided Dockerfile is a recommended approach for creating consistent deployment artifacts. Ensure your production environment variables (especially secrets like `MAGIC_LINK_SECRET`, `OTP_SECRET`, `JWT_SECRET`, and `REDIS_URL` with credentials) are securely managed (e.g., using environment variables provided by your hosting platform or a secret management system) and **not** hardcoded or committed in the `.env` file used for deployment builds.
 
 ## Contributing
 

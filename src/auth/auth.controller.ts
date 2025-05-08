@@ -1,14 +1,15 @@
-import { Controller, Get, Post, Req, Res, UseGuards, Body } from '@nestjs/common';
+import { Controller, Get, Post, Req, Res, UseGuards, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Request, Response } from 'express';
-import { LoginDto, AuthenticatedUser } from './dto/auth.dto';
+import { LoginDto, AuthenticatedUser, VerifyOtpDto } from './dto/auth.dto';
 import { MagicLoginAuthStrategy } from './magin-login.strategy'; // Import the NestJS strategy class
+import { AuthService } from './auth.service'; // Import AuthService
 
 @Controller('auth')
 export class AuthController {
     constructor(
-        // Inject the MagicLoginAuthStrategy instance using its class type
-        private readonly magicLoginStrategy: MagicLoginAuthStrategy
+        private readonly magicLoginStrategy: MagicLoginAuthStrategy,
+        private readonly authService: AuthService, // Inject AuthService
     ) { }
 
     @Post('magiclogin')
@@ -33,5 +34,22 @@ export class AuthController {
         console.log(req);
         // At this point, req.user is populated by the AuthGuard after successful verification
         res.send({ success: true, message: 'Logged in successfully', user: req.user });
+    }
+
+    // OTP Endpoints
+    @Post('otp/send')
+    @HttpCode(HttpStatus.OK)
+    async sendOtp(@Body() loginDto: LoginDto) {
+        // We only need the destination from LoginDto for sending OTP
+        return this.authService.generateAndSendOtp(loginDto.destination);
+    }
+
+    @Post('otp/verify')
+    @HttpCode(HttpStatus.OK)
+    async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
+        const user = await this.authService.verifyOtp(verifyOtpDto.destination, verifyOtpDto.otp);
+        // User is validated, now generate JWT
+        const token = await this.authService.loginWithJwt(user);
+        return { success: true, message: 'OTP verified successfully. Logged in.', ...token };
     }
 }
