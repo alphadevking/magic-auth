@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PassportModule } from '@nestjs/passport';
-import { JwtModule } from '@nestjs/jwt'; // Import JwtModule
+import { JwtModule } from '@nestjs/jwt';
 import { MagicLoginAuthStrategy } from './magin-login.strategy';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { createKeyv } from '@keyv/redis'; // Keyv and CacheableMemory removed
+import { createKeyv } from '@keyv/redis';
 
 @Module({
     imports: [
